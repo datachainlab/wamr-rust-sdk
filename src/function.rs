@@ -6,16 +6,22 @@
 //! an exported wasm function.
 //! get one via `Function::find_export_func()`
 
-use std::{ffi::CString, marker::PhantomData};
+extern crate alloc;
+use alloc::{ffi::CString, string::String, vec, vec::Vec};
+use core::{ffi::c_void, marker::PhantomData};
+
 use wamr_sys::{
     wasm_exec_env_t, wasm_func_get_param_count, wasm_func_get_result_count,
     wasm_func_get_result_types, wasm_function_inst_t, wasm_runtime_call_wasm,
     wasm_runtime_get_exception, wasm_runtime_get_exec_env_singleton,
-    wasm_runtime_get_wasi_exit_code, wasm_runtime_lookup_function,
+    wasm_runtime_lookup_function,
     wasm_valkind_enum_WASM_EXTERNREF, wasm_valkind_enum_WASM_F32, wasm_valkind_enum_WASM_F64,
     wasm_valkind_enum_WASM_FUNCREF, wasm_valkind_enum_WASM_I32, wasm_valkind_enum_WASM_I64,
     wasm_valkind_enum_WASM_V128,
 };
+
+#[cfg(feature = "libc-wasi")]
+use wamr_sys::wasm_runtime_get_wasi_exit_code;
 
 use crate::{
     helper::exception_to_string, instance::Instance, value::WasmValue, ExecError, RuntimeError,
@@ -116,11 +122,31 @@ impl<'instance> Function<'instance> {
         instance: &'instance Instance<'instance>,
         params: &Vec<WasmValue>,
     ) -> Result<Vec<WasmValue>, RuntimeError> {
+        self.call_with_user_data(instance, params, core::ptr::null_mut())
+    }
+
+    /// execute an export function.
+    /// all parameters need to be wrapped in `WasmValue`
+    ///
+    /// # Error
+    ///
+    /// Return `RuntimeError::ExecutionError` if failed.
+    #[allow(non_upper_case_globals)]
+    pub fn call_with_user_data(
+        &self,
+        instance: &'instance Instance<'instance>,
+        params: &Vec<WasmValue>,
+        user_data: *mut c_void,
+    ) -> Result<Vec<WasmValue>, RuntimeError> {
         let param_count =
             unsafe { wasm_func_get_param_count(self.function, instance.get_inner_instance()) };
         if param_count > params.len() as u32 {
             return Err(RuntimeError::ExecutionError(ExecError {
-                message: "invalid parameters".to_string(),
+                message: {
+                    {
+                        String::from("invalid parameters")
+                    }
+                },
                 exit_code: 0xff,
             }));
         }
@@ -128,7 +154,7 @@ impl<'instance> Function<'instance> {
         // Maintain sufficient allocated space in the vector rather than just declaring its capacity.
         let result_count =
             unsafe { wasm_func_get_result_count(self.function, instance.get_inner_instance()) };
-        let capacity = std::cmp::max(param_count, result_count) as usize * 4;
+        let capacity = core::cmp::max(param_count, result_count) as usize * 4;
 
         // Populate the parameters in the sufficiently allocated argv vector
         let mut argv = Vec::with_capacity(capacity);
@@ -139,10 +165,11 @@ impl<'instance> Function<'instance> {
 
         let call_result: bool;
         unsafe {
-            let exec_env: wasm_exec_env_t =
-                wasm_runtime_get_exec_env_singleton(instance.get_inner_instance());
+            let exec_env: wasm_exec_env_t = wamr_sys::wasm_runtime_create_exec_env(instance.get_inner_instance(), 1024 * 1024);
+            wamr_sys::wasm_runtime_set_user_data(exec_env, user_data);
             call_result =
-                wasm_runtime_call_wasm(exec_env, self.function, param_count, argv.as_mut_ptr());
+                wamr_sys::wasm_runtime_call_wasm(exec_env, self.function, param_count, argv.as_mut_ptr());
+            wamr_sys::wasm_runtime_destroy_exec_env(exec_env);
         };
 
         if !call_result {
@@ -150,7 +177,13 @@ impl<'instance> Function<'instance> {
                 let exception_c = wasm_runtime_get_exception(instance.get_inner_instance());
                 let error_info = ExecError {
                     message: exception_to_string(exception_c),
-                    exit_code: wasm_runtime_get_wasi_exit_code(instance.get_inner_instance()),
+                    exit_code: {
+                        #[cfg(feature = "libc-wasi")]
+                        let code = wasm_runtime_get_wasi_exit_code(instance.get_inner_instance());
+                        #[cfg(not(feature = "libc-wasi"))]
+                        let code = 0xff;
+                        code
+                    },
                 };
                 return Err(RuntimeError::ExecutionError(error_info));
             }
@@ -240,6 +273,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "std", feature = "libc-wasi"))]
     #[test]
     fn test_func_in_wasm32_wasi() {
         let runtime = Runtime::new().unwrap();
@@ -273,6 +307,7 @@ mod tests {
         assert_eq!(result.unwrap(), vec![WasmValue::I32(27)]);
     }
 
+    #[cfg(all(feature = "std", feature = "libc-wasi"))]
     #[test]
     fn test_func_in_wasm32_wasi_w_args() {
         let runtime = Runtime::new().unwrap();
@@ -303,6 +338,7 @@ mod tests {
         println!("{:?}", result.unwrap());
     }
 
+    #[cfg(all(feature = "std", feature = "libc-wasi"))]
     #[test]
     fn test_func_in_multi_v128_return() {
         let runtime = Runtime::new().unwrap();
