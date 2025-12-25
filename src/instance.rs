@@ -114,6 +114,7 @@ mod tests {
     use wamr_sys::{
         wasm_runtime_get_running_mode, RunningMode_Mode_Interp, RunningMode_Mode_LLVM_JIT,
     };
+    use alloc::{ vec, vec::Vec };
 
     #[test]
     fn test_instance_new() {

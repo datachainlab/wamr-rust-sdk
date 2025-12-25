@@ -197,7 +197,10 @@ impl<'instance> Function<'instance> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{module::Module, runtime::Runtime, wasi_context::WasiCtxBuilder};
+    use crate::{module::Module, runtime::Runtime};
+    #[cfg(feature = "std")]
+    use crate::wasi_context::WasiCtxBuilder;
+    #[cfg(feature = "std")]
     use std::{
         process::{Command, Stdio}, path::Path, path::PathBuf, env, fs,
     };

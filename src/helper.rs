@@ -30,7 +30,7 @@ pub fn exception_to_string(raw_exception: *const c_char) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
+    use alloc::ffi::CString;
 
     #[test]
     fn test_error_buf_empty() {

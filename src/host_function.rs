@@ -96,13 +96,16 @@ mod tests {
     use crate::{
         function::Function, instance::Instance, module::Module, runtime::Runtime, value::WasmValue,
     };
+    #[cfg(feature = "std")]
     use std::env;
+    #[cfg(feature = "std")]
     use std::path::PathBuf;
 
     extern "C" fn extra() -> i32 {
         100
     }
 
+    #[cfg(feature = "std")]
     #[test]
     #[ignore]
     fn test_host_function() {
