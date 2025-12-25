@@ -8,22 +8,32 @@
 
 use crate::{
     helper::error_buf_to_string, helper::DEFAULT_ERROR_BUF_SIZE, runtime::Runtime,
-    wasi_context::WasiCtx, RuntimeError,
+    RuntimeError,
 };
-use core::marker::PhantomData;
-use std::{
-    ffi::{c_char, CString},
-    fs::File,
-    io::Read,
-    path::Path,
-    ptr,
-    string::String,
-    vec::Vec,
-};
+
+#[cfg(feature = "std")]
+use crate::wasi_context::WasiCtx;
+
+use core::{ffi::c_char, marker::PhantomData};
+
+#[cfg(feature = "std")]
+use core::ptr;
+
+#[cfg(feature = "std")]
+use std::{fs::File, io::Read, path::Path};
+
+use alloc::{string::String, vec::Vec};
+
+use alloc::ffi::CString;
+
 use wamr_sys::{
-    wasm_module_t, wasm_runtime_load, wasm_runtime_set_module_name,
+    wasm_module_t, wasm_runtime_load, wasm_runtime_register_module, wasm_runtime_set_module_name,
+    wasm_runtime_unload,
+};
+#[cfg(feature = "std")]
+use wamr_sys::{
     wasm_runtime_set_wasi_addr_pool, wasm_runtime_set_wasi_args,
-    wasm_runtime_set_wasi_ns_lookup_pool, wasm_runtime_unload,
+    wasm_runtime_set_wasi_ns_lookup_pool,
 };
 
 #[allow(dead_code)]
@@ -33,6 +43,7 @@ pub struct Module<'runtime> {
     module: wasm_module_t,
     // to keep the module content in memory
     content: Vec<u8>,
+    #[cfg(feature = "std")]
     wasi_ctx: WasiCtx,
     _phantom: PhantomData<&'runtime Runtime>,
 }
@@ -44,6 +55,7 @@ impl<'runtime> Module<'runtime> {
     ///
     /// If the file does not exist or the file cannot be read, an `RuntimeError::WasmFileFSError` will be returned.
     /// If the wasm file is not a valid wasm file, an `RuntimeError::CompilationError` will be returned.
+    #[cfg(feature = "std")]
     pub fn from_file(runtime: &'runtime Runtime, wasm_file: &Path) -> Result<Self, RuntimeError> {
         let name = wasm_file.file_name().unwrap().to_str().unwrap();
         let mut wasm_file = File::open(wasm_file)?;
@@ -108,6 +120,7 @@ impl<'runtime> Module<'runtime> {
             name: String::from(name),
             module,
             content,
+            #[cfg(feature = "std")]
             wasi_ctx: WasiCtx::default(),
             _phantom: PhantomData,
         })
@@ -116,6 +129,7 @@ impl<'runtime> Module<'runtime> {
     /// set Wasi context for a module
     ///
     /// This function should be called before `Instance::new`
+    #[cfg(feature = "std")]
     pub fn set_wasi_context(&mut self, wasi_ctx: WasiCtx) {
         self.wasi_ctx = wasi_ctx;
 
@@ -201,10 +215,15 @@ impl Drop for Module<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{helper::cstr_to_string, runtime::Runtime, wasi_context::WasiCtxBuilder};
+    use crate::{helper::cstr_to_string, runtime::Runtime};
+    #[cfg(feature = "std")]
+    use crate::wasi_context::WasiCtxBuilder;
+    #[cfg(feature = "std")]
     use std::path::PathBuf;
     use wamr_sys::wasm_runtime_get_module_name;
+    use alloc::{ vec, vec::Vec };
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_module_not_exist() {
         let runtime = Runtime::new();
@@ -238,6 +257,7 @@ mod tests {
         assert!(module.is_ok());
     }
 
+    #[cfg(all(feature = "std", feature = "libc-wasi"))]
     #[test]
     fn test_module_from_file() {
         let runtime = Runtime::new().unwrap();
@@ -249,6 +269,7 @@ mod tests {
         assert!(module.is_ok());
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_module_with_wasi_args() {
         let runtime = Runtime::new().unwrap();
