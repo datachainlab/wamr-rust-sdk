@@ -31,6 +31,8 @@ cc = "1.2"
 cmake = "0.1"
 
 [features]
+default = [ "std" ]
+sgx = [ "multi-module" ]
 custom-section = []
 dump-call-stack = []
 esp-idf = []
@@ -38,4 +40,7 @@ hw-bound-check = []
 llvmjit = []
 multi-module = []
 name-section = [ "custom-section" ]
-std = []
+std = [ "libc-wasi", "fast-interp", "multi-module" ]
+fast-interp = []
+libc-wasi = []
+libc-builtin = []
