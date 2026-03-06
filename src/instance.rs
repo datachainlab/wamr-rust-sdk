@@ -73,6 +73,8 @@ impl<'module> Instance<'module> {
         };
 
         if instance.is_null() {
+            // thread env was initialized above, so tear it down on the error path as well.
+            unsafe { wasm_runtime_destroy_thread_env() };
             match error_buf.len() {
                 0 => {
                     return Err(RuntimeError::InstantiationFailure(String::from(
@@ -101,8 +103,8 @@ impl<'module> Instance<'module> {
 impl Drop for Instance<'_> {
     fn drop(&mut self) {
         unsafe {
-            wasm_runtime_destroy_thread_env();
             wasm_runtime_deinstantiate(self.instance);
+            wasm_runtime_destroy_thread_env();
         }
     }
 }
